@@ -155,6 +155,8 @@ func (s *Session) fetchUserCourses() error {
 		return fmt.Errorf("no cookies found during fetching user courses")
 	}
 
+	s.Student.Courses = nil
+
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", UMT_COURSES_URL, nil)
 	if err != nil {
@@ -175,8 +177,6 @@ func (s *Session) fetchUserCourses() error {
 	if err != nil {
 		return fmt.Errorf("failed to parse courses HTML: %w", err)
 	}
-
-	s.Student.Courses = nil
 
 	doc.Find(".table tr").Each(func(rowIndex int, row *goquery.Selection) {
 		if row.Find("th").Length() > 0 {
@@ -257,24 +257,77 @@ func (s *Session) fetchCourseAssessments(courseId string) error {
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(bodyBytes)))
 	if err != nil {
-		err = fmt.Errorf("failed to parse HTML document: %w", err)
+		return fmt.Errorf("failed to parse HTML document: %w", err)
 	}
 
-	table := doc.Find("table")
-	if table.Length() == 0 {
-		fmt.Println("No tables found in document")
-	} else {
-		table.Each(func(i int, s *goquery.Selection) {
-			fmt.Printf("Processing table %d\n", i)
+	index := getCourseIndex(s, courseId)
+	if index == -1 {
+		return fmt.Errorf("course not found")
+	}
+
+	course := &s.Student.Courses[index]
+	var assessmentRecords []Assessment
+
+	doc.Find("table").Each(func(tableIndex int, table *goquery.Selection) {
+		headerRow := table.Find("tr").First()
+		hasNameHeader := false
+		hasTotalMarksHeader := false
+		hasObtainedMarksHeader := false
+		hasAssignedDateHeader := false
+
+		headerRow.Find("th").Each(func(i int, th *goquery.Selection) {
+			headerText := strings.ToLower(strings.TrimSpace(th.Text()))
+			if strings.Contains(headerText, "name") {
+				hasNameHeader = true
+			}
+			if strings.Contains(headerText, "total marks") {
+				hasTotalMarksHeader = true
+			}
+			if strings.Contains(headerText, "obtained marks") {
+				hasObtainedMarksHeader = true
+			}
+			if strings.Contains(headerText, "assigned date") {
+				hasAssignedDateHeader = true
+			}
 		})
-	}
 
-	filename := fmt.Sprintf("course_assessments_%s.txt", courseId)
-	if err := os.WriteFile(filename, bodyBytes, 0644); err != nil {
-		return fmt.Errorf("failed to write assessment file: %w", err)
-	}
+		if hasNameHeader && hasTotalMarksHeader && hasObtainedMarksHeader && hasAssignedDateHeader {
+			table.Find("tr").Each(func(rowIndex int, row *goquery.Selection) {
+				if rowIndex == 0 {
+					return
+				}
 
-	fmt.Printf("Course assessments saved to %s\n", filename)
+				cells := row.Find("td")
+				if cells.Length() >= 4 {
+					name := strings.TrimSpace(cells.Eq(0).Text())
+					totalMarksStr := strings.TrimSpace(cells.Eq(1).Text())
+					obtainedMarksStr := strings.TrimSpace(cells.Eq(2).Text())
+					assignedDate := strings.TrimSpace(cells.Eq(3).Text())
+
+					totalMarks := 0.0
+					if totalMarksFloat, err := strconv.ParseFloat(totalMarksStr, 64); err == nil {
+						totalMarks = totalMarksFloat
+					}
+
+					obtainedMarks := 0.0
+					if obtainedMarksFloat, err := strconv.ParseFloat(obtainedMarksStr, 64); err == nil {
+						obtainedMarks = obtainedMarksFloat
+					}
+
+					if name != "" {
+						assessmentRecords = append(assessmentRecords, Assessment{
+							name:          name,
+							obtainedMarks: float32(obtainedMarks),
+							totalMarks:    float32(totalMarks),
+							assignedDate:  assignedDate,
+						})
+					}
+				}
+			})
+		}
+	})
+
+	course.Assessment = assessmentRecords
 	return nil
 }
 
@@ -480,7 +533,6 @@ func (s *Session) fetchCourseAttendance(refresh bool, courseId string) error {
 					})
 				}
 
-				// Parse summary information from the last two elements
 				totalLecturesStr := strings.TrimPrefix(extractedData[len(extractedData)-2], "Total Lectures : ")
 				totalLectures, err := strconv.Atoi(totalLecturesStr)
 				if err != nil {

@@ -20,6 +20,13 @@ type Attendance struct {
 	Faculty       string
 }
 
+type Assessment struct {
+	name          string
+	obtainedMarks float32
+	totalMarks    float32
+	assignedDate  string
+}
+
 type Course struct {
 	ID           string
 	Code         string
@@ -39,6 +46,7 @@ type Course struct {
 	TotalLectures        int
 	AttendancePercentage int
 	Attendance           []Attendance
+	Assessment           []Assessment
 }
 
 type TranscriptCourse struct {
@@ -376,7 +384,6 @@ func (t *Transcript) ToSerializable() SerializableTranscript {
 func (st *SerializableTranscript) ToTranscript() Transcript {
 	semesterMap := make(map[Semester][]TranscriptCourse)
 	for _, serializableSem := range st.Semesters {
-		// Parse string values back to appropriate types for Semester struct
 		creditHours, _ := strconv.Atoi(serializableSem.CreditHoursEarned)
 		cgpa, _ := strconv.ParseFloat(serializableSem.CGPA, 32)
 		sgpa, _ := strconv.ParseFloat(serializableSem.SGPA, 32)

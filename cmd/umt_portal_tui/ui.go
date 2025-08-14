@@ -35,6 +35,7 @@ const (
 	CoursesView
 	CourseDetailView
 	AttendanceView
+	AssessmentView
 	TranscriptView
 )
 
@@ -80,9 +81,11 @@ type model struct {
 	loadingState   LoadingState
 	spinner        spinner.Model
 
-	table               []table.Model
-	transcriptSemesters []SemesterKey
-	currentSemester     int
+	table                 []table.Model
+	transcriptSemesters   []SemesterKey
+	currentSemester       int
+	attendanceTotalPages  int
+	currentAttendancePage int
 }
 
 const (
@@ -180,7 +183,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "attendance":
 				m.currentView = CourseDetailView
 			case "assessments":
-				m.currentSemester = int(CourseDetailView)
+				m.currentView = CourseDetailView
 			}
 		} else {
 			m.courseError = nil
@@ -191,7 +194,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if msg.Action == "attendance" {
 				m.currentView = AttendanceView
 			} else if msg.Action == "assessments" {
-				m.currentView = CourseDetailView
+				m.currentView = AssessmentView
 			} else {
 				m.currentView = CoursesView
 			}
@@ -218,6 +221,8 @@ func (m model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleCourseDetailKeys(msg)
 	case AttendanceView:
 		return m.handleAttendanceKeys(msg)
+	case AssessmentView:
+		return m.handleAssessmentKeys(msg)
 	case TranscriptView:
 		return m.handleTranscriptKeys(msg)
 	default:
@@ -273,7 +278,6 @@ func (m model) handleLoginKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setLoadingState("🔐 Logging in, please wait", "Authenticating your credentials with the UMT portal", "• Q: Cancel and quit")
 			m.currentView = LoadingView
 
-			// Return both spinner tick and login command
 			return m, tea.Batch(
 				m.spinner.Tick,
 				func() tea.Msg {
@@ -355,7 +359,7 @@ func (m model) handleCoursesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "r":
-		m.setLoadingState("🔄 Refreshing courses, please wait", "Updating course information from the portal", "• Esc: Back to courses • Q: Cancel and quit")
+		m.setLoadingState("🔄 Refreshing courses, please wait", "Refreshing course information from the portal", "• Esc: Back to courses • Q: Cancel and quit")
 		m.currentView = LoadingView
 		return m, tea.Batch(
 			m.spinner.Tick,
@@ -469,7 +473,9 @@ func (m model) View() string {
 	case CourseDetailView:
 		return m.renderCourseDetail()
 	case AttendanceView:
-		return m.renderAttendance()
+		return m.renderTable(true)
+	case AssessmentView:
+		return m.renderTable(false)
 	case TranscriptView:
 		return m.renderTranscript()
 	default:
@@ -566,7 +572,6 @@ func (m model) renderLogin() string {
 		rememberMeField = checkboxStyle.Render(fmt.Sprintf("%s Remember me", checkboxChar))
 	}
 
-	// Login button
 	var loginButton string
 	if m.focusedField == fieldLoginButton {
 		loginButton = focusedButtonStyle.Render("Login")
@@ -717,7 +722,6 @@ func (m model) renderCourses() string {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 	}
 
-	// Course list
 	var courseList []string
 	for i, course := range m.courses {
 		courseText := fmt.Sprintf("%s - %s (%s CH)", course.Code, course.Title, course.CreditHours)
@@ -751,7 +755,7 @@ func (m model) renderCourseDetail() string {
 
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(BLUE).
+		Foreground(LIGHT_BLUE).
 		MarginBottom(1)
 
 	labelStyle := lipgloss.NewStyle().
@@ -790,7 +794,11 @@ func (m model) renderCourseDetail() string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }
 
-func (m model) renderAttendance() string {
+const attendancePageSize = 10
+const assessmentPageSize = 10
+
+// view true = attendance view false = assessment
+func (m model) renderTable(view bool) string {
 	if len(m.courses) == 0 || m.selectedCourse >= len(m.courses) {
 		return m.renderCourses()
 	}
@@ -799,12 +807,11 @@ func (m model) renderAttendance() string {
 
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(BLUE).
+		Foreground(LIGHT_BLUE).
 		MarginBottom(1)
 
 	summaryStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(LIGHT_BLUE).
 		MarginBottom(1)
 
 	headerStyle := lipgloss.NewStyle().
@@ -814,10 +821,10 @@ func (m model) renderAttendance() string {
 		Padding(0, 1)
 
 	presentStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#00FF00")) // Green
+		Foreground(lipgloss.Color(GREEN))
 
 	absentStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FF0000")) // Red
+		Foreground(lipgloss.Color(PINK))
 
 	neutralStyle := lipgloss.NewStyle().
 		Foreground(WHITE)
@@ -826,37 +833,73 @@ func (m model) renderAttendance() string {
 		Foreground(GREY).
 		MarginTop(1)
 
-	// Title
-	title := titleStyle.Render(fmt.Sprintf("📊 Attendance Report: %s", course.Code))
+	var (
+		titleString  string
+		summaryText  string
+		noDataText   string
+		totalRecords int
+		summaryColor lipgloss.Color
+	)
 
-	// Summary
-	var summaryColor lipgloss.Color
-	switch {
-	case course.AttendancePercentage >= 85:
-		summaryColor = lipgloss.Color("#00FF00") // Green
-	case course.AttendancePercentage >= 75:
-		summaryColor = lipgloss.Color("#FFFF00") // Yellow
-	default:
-		summaryColor = lipgloss.Color("#FF0000") // Red
+	if view {
+		titleString = "📊 Attendance"
+		totalRecords = len(course.Attendance)
+
+		switch {
+		case course.AttendancePercentage >= 85:
+			summaryColor = lipgloss.Color(GREEN)
+		case course.AttendancePercentage >= 70:
+			summaryColor = lipgloss.Color(YELLOW)
+		default:
+			summaryColor = lipgloss.Color(PINK)
+		}
+
+		summaryText = fmt.Sprintf("Total Lectures: %d | Attendance: %d%%",
+			course.TotalLectures, course.AttendancePercentage)
+		noDataText = "No attendance records available"
+	} else {
+		titleString = "📝 Assessment"
+		totalRecords = len(course.Assessment)
+
+		var totalObtained, totalPossible float32
+		for _, assessment := range course.Assessment {
+			totalObtained += assessment.obtainedMarks
+			totalPossible += assessment.totalMarks
+		}
+
+		var percentage float32
+		if totalPossible > 0 {
+			percentage = (totalObtained / totalPossible) * 100
+		}
+
+		switch {
+		case percentage >= 85:
+			summaryColor = lipgloss.Color(GREEN)
+		case percentage >= 70:
+			summaryColor = lipgloss.Color(YELLOW)
+		default:
+			summaryColor = lipgloss.Color(PINK)
+		}
+
+		summaryText = fmt.Sprintf("Total Assessments: %d | Obtained: %.1f/%.1f (%.1f%%)",
+			len(course.Assessment), totalObtained, totalPossible, percentage)
+		noDataText = "No assessment records available"
 	}
 
-	summaryText := fmt.Sprintf("Total Lectures: %d | Attendance: %d%%",
-		course.TotalLectures, course.AttendancePercentage)
+	title := titleStyle.Render(fmt.Sprintf("%s Report: %s", titleString, course.Code))
 	summary := summaryStyle.Foreground(summaryColor).Render(summaryText)
 
-	// Check if attendance data exists
-	if len(course.Attendance) == 0 {
+	if totalRecords == 0 {
 		noDataStyle := lipgloss.NewStyle().
 			Foreground(GREY).
 			MarginTop(2).
 			MarginBottom(2)
 
-		noData := noDataStyle.Render("📝 No attendance records available")
-		helpText := helpStyle.Render("• Esc/Enter: Back to course details • Q: Quit")
+		noData := noDataStyle.Render(noDataText)
+		helpText := helpStyle.Render("• Esc/Enter: Back • R: Refresh • Q: Quit")
 
 		content := lipgloss.JoinVertical(lipgloss.Center,
 			title,
-			summary,
 			noData,
 			helpText,
 		)
@@ -864,58 +907,112 @@ func (m model) renderAttendance() string {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 	}
 
-	// Table headers
-	headers := []string{
-		headerStyle.Render("#") + strings.Repeat(" ", 3),
-		headerStyle.Render("Date") + strings.Repeat(" ", 3),
-		headerStyle.Render("Status") + strings.Repeat(" ", 2),
-		headerStyle.Render("Faculty"),
+	var pageSize int
+	currentPage := m.currentAttendancePage
+
+	if view {
+		pageSize = attendancePageSize
+	} else {
+		pageSize = assessmentPageSize
 	}
 
-	// Calculate column widths
-	lectureWidth := 3
-	dateWidth := 12
-	statusWidth := 8
-	facultyWidth := 15
+	totalPages := (totalRecords + pageSize - 1) / pageSize
+	if currentPage >= totalPages {
+		currentPage = totalPages - 1
+		m.currentAttendancePage = currentPage
+	}
 
-	// Build table rows
+	startIndex := currentPage * pageSize
+	endIndex := min(startIndex+pageSize, totalRecords)
+
 	var rows []string
-	rows = append(rows, strings.Join([]string{
-		fmt.Sprintf("%-*s", lectureWidth, headers[0]),
-		fmt.Sprintf("%-*s", dateWidth, headers[1]),
-		fmt.Sprintf("%-*s", statusWidth, headers[2]),
-		fmt.Sprintf("%-*s", facultyWidth, headers[3]),
-	}, " "))
+	var widths []int
 
-	// Add separator line
-	separator := strings.Repeat("─", lectureWidth+dateWidth+statusWidth+facultyWidth+3)
-	rows = append(rows, neutralStyle.Render(separator))
+	if view {
+		headers := []string{headerStyle.Render("#") + strings.Repeat(" ", 3), headerStyle.Render("Date") + strings.Repeat(" ", 3), headerStyle.Render("Status") + strings.Repeat(" ", 2), headerStyle.Render("Faculty")}
 
-	// Add attendance records
-	for _, record := range course.Attendance {
-		lectureNum := fmt.Sprintf("%-*d", lectureWidth, record.LectureNumber)
-		date := fmt.Sprintf("%-*s", dateWidth, record.LectureDate)
+		rows = append(rows, strings.Join(headers, " "))
 
-		var status string
-		if record.Attendance {
-			status = presentStyle.Render(fmt.Sprintf("%-*s", statusWidth, "Present"))
-		} else {
-			status = absentStyle.Render(fmt.Sprintf("%-*s", statusWidth, "Absent"))
+		widths = []int{3, 12, 8, 15}
+
+		separator := strings.Repeat("─", widths[0]+widths[1]+widths[2]+widths[3]+3)
+		rows = append(rows, neutralStyle.Render(separator))
+
+		for _, record := range course.Attendance[startIndex:endIndex] {
+			lectureNum := fmt.Sprintf("%-*d", widths[0], record.LectureNumber)
+			date := fmt.Sprintf("%-*s", widths[1], record.LectureDate)
+
+			var status string
+			if record.Attendance {
+				status = presentStyle.Render(fmt.Sprintf("%-*s", widths[2], "Present"))
+			} else {
+				status = absentStyle.Render(fmt.Sprintf("%-*s", widths[2], "Absent"))
+			}
+
+			faculty := neutralStyle.Render(fmt.Sprintf("%-*s", widths[3], record.Faculty))
+
+			rows = append(rows, fmt.Sprintf("%s %s %s %s",
+				neutralStyle.Render(lectureNum),
+				neutralStyle.Render(date),
+				status,
+				faculty,
+			))
+		}
+	} else {
+		headers := []string{
+			headerStyle.Render("Name") + strings.Repeat(" ", 15),
+			headerStyle.Render("Obtained") + strings.Repeat(" ", 3),
+			headerStyle.Render("Total") + strings.Repeat(" ", 2),
+			headerStyle.Render("Percentage") + strings.Repeat(" ", 4),
+			headerStyle.Render("Date"),
 		}
 
-		faculty := neutralStyle.Render(fmt.Sprintf("%-*s", facultyWidth, record.Faculty))
+		widths = []int{25, 15, 20, 10, 5}
 
-		row := strings.Join([]string{
-			neutralStyle.Render(lectureNum),
-			neutralStyle.Render(date),
-			status,
-			faculty,
-		}, " ")
+		rows = append(rows, fmt.Sprintf("%-*s %-*s %-*s %-*s %-*s",
+			widths[0], headers[0], widths[1], headers[1],
+			widths[2], headers[2], widths[3], headers[3], widths[4], headers[4]))
 
-		rows = append(rows, row)
+		separator := strings.Repeat("─", widths[0]+widths[1]+widths[2]+widths[3]+widths[4])
+		rows = append(rows, neutralStyle.Render(separator))
+
+		for _, record := range course.Assessment[startIndex:endIndex] {
+			name := record.name
+			if len(name) > 20 {
+				name = name[:17] + "..."
+			}
+
+			obtained := fmt.Sprintf("%.1f", record.obtainedMarks)
+			total := fmt.Sprintf("%.1f", record.totalMarks)
+
+			var percentage float32
+			if record.totalMarks > 0 {
+				percentage = (record.obtainedMarks / record.totalMarks) * 100
+			}
+
+			var percentageStr string
+			if percentage >= 85 {
+				percentageStr = presentStyle.Render(fmt.Sprintf("%-*s", widths[3], fmt.Sprintf("%.1f%%", percentage)))
+			} else if percentage >= 75 {
+				percentageStr = lipgloss.NewStyle().Foreground(YELLOW).Render(fmt.Sprintf("%-*s", widths[3], fmt.Sprintf("%.1f%%", percentage)))
+			} else {
+				percentageStr = absentStyle.Render(fmt.Sprintf("%-*s", widths[3], fmt.Sprintf("%.1f%%", percentage)))
+			}
+
+			widths2 := []int{25, 10, 10, 12}
+
+			rowData := []string{
+				neutralStyle.Render(fmt.Sprintf("%-*s", widths2[0], name)),
+				neutralStyle.Render(fmt.Sprintf("%-*s", widths2[1], obtained)),
+				neutralStyle.Render(fmt.Sprintf("%-*s", widths2[2], total)),
+				neutralStyle.Render(fmt.Sprintf("%-*s", widths2[3], percentageStr) + strings.Repeat(" ", 3)),
+				record.assignedDate,
+			}
+
+			rows = append(rows, strings.Join(rowData, " "))
+		}
 	}
 
-	// Create table
 	tableStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(BLUE).
@@ -923,14 +1020,14 @@ func (m model) renderAttendance() string {
 
 	table := tableStyle.Render(strings.Join(rows, "\n"))
 
-	// Help text
-	helpText := helpStyle.Render("• Esc/Enter: Back to course details • Q: Quit")
+	pageIndicator := helpStyle.Render(fmt.Sprintf("Page %d/%d • ←/→ to navigate", currentPage+1, totalPages))
+	helpText := helpStyle.Render("• Esc: Back • R: Refresh • Q: Quit")
 
-	// Combine all elements
 	content := lipgloss.JoinVertical(lipgloss.Center,
 		title,
 		summary,
 		table,
+		pageIndicator,
 		helpText,
 	)
 
@@ -994,7 +1091,6 @@ func (m model) handleTranscriptKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// Add this new renderTranscript function
 func (m model) renderTranscript() string {
 	if len(m.table) == 0 || len(m.transcriptSemesters) == 0 {
 		errorStyle := lipgloss.NewStyle().Foreground(RED)
@@ -1006,7 +1102,6 @@ func (m model) renderTranscript() string {
 		m.currentSemester = 0
 	}
 
-	// Header with current semester info
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(LIGHT_BLUE).
@@ -1016,7 +1111,6 @@ func (m model) renderTranscript() string {
 	currentSem := m.transcriptSemesters[m.currentSemester].semester
 	semesterInfo := fmt.Sprintf("📄 Academic Transcript - %s", currentSem.Name)
 
-	// Semester stats
 	statsStyle := lipgloss.NewStyle().
 		Foreground(WHITE).
 		Align(lipgloss.Center)
@@ -1028,7 +1122,6 @@ func (m model) renderTranscript() string {
 	lavenderStyle := lipgloss.NewStyle().Foreground(LAVENDER)
 	pinkStyle := lipgloss.NewStyle().Foreground(PINK)
 
-	// Convert int and floats to strings
 	creditHoursStr := strconv.Itoa(currentSem.CreditHoursEarned)
 	sgpaStr := fmt.Sprintf("%.2f", currentSem.SGPA)
 	cgpaStr := fmt.Sprintf("%.2f", currentSem.CGPA)
@@ -1055,7 +1148,6 @@ func (m model) renderTranscript() string {
 		pinkStyle.Render("4.00"),
 	)
 
-	// Navigation indicator
 	navStyle := lipgloss.NewStyle().
 		Foreground(GREY).
 		MarginBottom(1).
@@ -1063,7 +1155,6 @@ func (m model) renderTranscript() string {
 
 	navIndicator := fmt.Sprintf("Semester %d of %d", m.currentSemester+1, len(m.transcriptSemesters))
 
-	// Help text
 	helpStyle := lipgloss.NewStyle().
 		Foreground(GREY).
 		MarginTop(1).
@@ -1071,10 +1162,8 @@ func (m model) renderTranscript() string {
 
 	helpText := "• ← →: Switch semesters • ↑ ↓: Navigate • Esc: Back • R: Refresh • Q: Quit"
 
-	// Get current table
 	currentTable := m.table[m.currentSemester].View()
 
-	// Combine all elements
 	content := lipgloss.JoinVertical(lipgloss.Center,
 		headerStyle.Render(semesterInfo),
 		statsStyle.Render(stats),
@@ -1113,12 +1202,68 @@ func (m model) handleAttendanceKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				},
 			)
 		}
+
+	case "right", "l":
+		if len(m.courses) > 0 && m.selectedCourse < len(m.courses) {
+			course := m.courses[m.selectedCourse]
+			totalPages := (len(course.Attendance) + attendancePageSize - 1) / attendancePageSize
+			if m.currentAttendancePage < totalPages-1 {
+				m.currentAttendancePage++
+			}
+		}
+	case "left", "h":
+		if m.currentAttendancePage > 0 {
+			m.currentAttendancePage--
+		}
 	}
 
 	return m, nil
 }
 
-// Update the initTranscriptTable function to be more robust
+func (m model) handleAssessmentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q":
+		if !m.rememberMe {
+			deleteTranscriptCache()
+		}
+		return m, tea.Quit
+	case "esc":
+		m.currentView = CourseDetailView
+	case "r":
+		if len(m.courses) > 0 && m.selectedCourse < len(m.courses) {
+			courseID := m.courses[m.selectedCourse].ID
+			courseName := m.courses[m.selectedCourse].Code
+			m.setLoadingState(fmt.Sprintf("📝 Getting assessments for %s...", courseName), "Refreshing assessment records", "• Esc: Back to courses • Q: Cancel and quit")
+			m.currentView = LoadingView
+			return m, tea.Batch(
+				m.spinner.Tick,
+				func() tea.Msg {
+					err := m.session.GetCourseAssessments(courseID)
+					if err != nil {
+						return CourseActionMsg{Action: "assessments", CourseID: courseID, Error: err, Success: false}
+					}
+					return CourseActionMsg{Action: "assessments", CourseID: courseID, Error: nil, Success: true}
+				},
+			)
+		}
+
+	case "right", "l":
+		if len(m.courses) > 0 && m.selectedCourse < len(m.courses) {
+			course := m.courses[m.selectedCourse]
+			totalPages := (len(course.Assessment) + assessmentPageSize - 1) / assessmentPageSize
+			if m.currentAttendancePage < totalPages-1 {
+				m.currentAttendancePage++
+			}
+		}
+	case "left", "h":
+		if m.currentAttendancePage > 0 {
+			m.currentAttendancePage--
+		}
+	}
+
+	return m, nil
+}
+
 func (m model) initTranscriptTable(t Transcript) []table.Model {
 	var tables []table.Model
 
