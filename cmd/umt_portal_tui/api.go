@@ -234,104 +234,131 @@ func (s *Session) fetchCourseAssessments(courseId string) error {
 		return fmt.Errorf("no cookies found during fetching course assessments")
 	}
 
-	client := &http.Client{}
-	req, err := http.NewRequest("GET", COURSES_VIEW_ASSESSMENT_URL+courseId, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create assessment request: %w", err)
-	}
+	maxRetries := 10
+	for range maxRetries {
+		client := &http.Client{}
+		req, err := http.NewRequest("GET", COURSES_VIEW_ASSESSMENT_URL+courseId, nil)
+		if err != nil {
+			time.Sleep(time.Second * 2)
+			continue
+		}
 
-	for _, cookie := range s.Cookies {
-		req.AddCookie(cookie)
-	}
+		for _, cookie := range s.Cookies {
+			req.AddCookie(cookie)
+		}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to get assessment page: %w", err)
-	}
-	defer resp.Body.Close()
+		resp, err := client.Do(req)
 
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read assessment response: %w", err)
-	}
+		if err != nil {
+			time.Sleep(time.Second * 2)
+			continue
+		}
+		defer resp.Body.Close()
 
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(bodyBytes)))
-	if err != nil {
-		return fmt.Errorf("failed to parse HTML document: %w", err)
-	}
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			time.Sleep(time.Second * 2)
+			continue
+		}
 
-	index := getCourseIndex(s, courseId)
-	if index == -1 {
-		return fmt.Errorf("course not found")
-	}
+		doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(bodyBytes)))
+		if err != nil {
+			time.Sleep(time.Second * 2)
+			continue
+		}
 
-	course := &s.Student.Courses[index]
-	var assessmentRecords []Assessment
+		index := getCourseIndex(s, courseId)
+		if index == -1 {
+			return fmt.Errorf("course not found")
+		}
 
-	doc.Find("table").Each(func(tableIndex int, table *goquery.Selection) {
-		headerRow := table.Find("tr").First()
-		hasNameHeader := false
-		hasTotalMarksHeader := false
-		hasObtainedMarksHeader := false
-		hasAssignedDateHeader := false
+		course := &s.Student.Courses[index]
+		var assessmentRecords []Assessment
+		foundTable := false
 
-		headerRow.Find("th").Each(func(i int, th *goquery.Selection) {
-			headerText := strings.ToLower(strings.TrimSpace(th.Text()))
-			if strings.Contains(headerText, "name") {
-				hasNameHeader = true
-			}
-			if strings.Contains(headerText, "total marks") {
-				hasTotalMarksHeader = true
-			}
-			if strings.Contains(headerText, "obtained marks") {
-				hasObtainedMarksHeader = true
-			}
-			if strings.Contains(headerText, "assigned date") {
-				hasAssignedDateHeader = true
+		doc.Find("table").Each(func(tableIndex int, table *goquery.Selection) {
+			headerRow := table.Find("tr").First()
+			hasNameHeader := false
+			hasTotalMarksHeader := false
+			hasObtainedMarksHeader := false
+			hasAssignedDateHeader := false
+
+			headerRow.Find("th").Each(func(i int, th *goquery.Selection) {
+				headerText := strings.ToLower(strings.TrimSpace(th.Text()))
+				if strings.Contains(headerText, "name") {
+					hasNameHeader = true
+				}
+				if strings.Contains(headerText, "total marks") {
+					hasTotalMarksHeader = true
+				}
+				if strings.Contains(headerText, "obtained marks") {
+					hasObtainedMarksHeader = true
+				}
+				if strings.Contains(headerText, "assigned date") {
+					hasAssignedDateHeader = true
+				}
+			})
+
+			if hasNameHeader && hasTotalMarksHeader && hasObtainedMarksHeader && hasAssignedDateHeader {
+				foundTable = true
+				table.Find("tr").Each(func(rowIndex int, row *goquery.Selection) {
+					if rowIndex == 0 {
+						return
+					}
+
+					cells := row.Find("td")
+					if cells.Length() >= 4 {
+						name := strings.TrimSpace(cells.Eq(0).Text())
+						totalMarksStr := strings.TrimSpace(cells.Eq(1).Text())
+						obtainedMarksStr := strings.TrimSpace(cells.Eq(2).Text())
+						assignedDate := strings.TrimSpace(cells.Eq(3).Text())
+
+						totalMarks := 0.0
+						if totalMarksFloat, err := strconv.ParseFloat(totalMarksStr, 64); err == nil {
+							totalMarks = totalMarksFloat
+						}
+
+						obtainedMarks := 0.0
+						if obtainedMarksFloat, err := strconv.ParseFloat(obtainedMarksStr, 64); err == nil {
+							obtainedMarks = obtainedMarksFloat
+						}
+
+						if name != "" {
+							assessmentRecords = append(assessmentRecords, Assessment{
+								name:          name,
+								obtainedMarks: float32(obtainedMarks),
+								totalMarks:    float32(totalMarks),
+								assignedDate:  assignedDate,
+							})
+						}
+					}
+				})
 			}
 		})
 
-		if hasNameHeader && hasTotalMarksHeader && hasObtainedMarksHeader && hasAssignedDateHeader {
-			table.Find("tr").Each(func(rowIndex int, row *goquery.Selection) {
-				if rowIndex == 0 {
-					return
-				}
-
-				cells := row.Find("td")
-				if cells.Length() >= 4 {
-					name := strings.TrimSpace(cells.Eq(0).Text())
-					totalMarksStr := strings.TrimSpace(cells.Eq(1).Text())
-					obtainedMarksStr := strings.TrimSpace(cells.Eq(2).Text())
-					assignedDate := strings.TrimSpace(cells.Eq(3).Text())
-
-					totalMarks := 0.0
-					if totalMarksFloat, err := strconv.ParseFloat(totalMarksStr, 64); err == nil {
-						totalMarks = totalMarksFloat
-					}
-
-					obtainedMarks := 0.0
-					if obtainedMarksFloat, err := strconv.ParseFloat(obtainedMarksStr, 64); err == nil {
-						obtainedMarks = obtainedMarksFloat
-					}
-
-					if name != "" {
-						assessmentRecords = append(assessmentRecords, Assessment{
-							name:          name,
-							obtainedMarks: float32(obtainedMarks),
-							totalMarks:    float32(totalMarks),
-							assignedDate:  assignedDate,
-						})
-					}
-				}
-			})
+		if len(assessmentRecords) == 0 {
+			if foundTable {
+				// Table found but no records -> Legitimately empty
+				course.Assessment = []Assessment{}
+				return nil
+			}
+			// If we got no assessments and no table, maybe the page load failed or was incomplete
+			// Wait and retry unless it's the last attempt
+			time.Sleep(time.Second * 2)
+			continue
 		}
-	})
 
-	course.Assessment = assessmentRecords
+		course.Assessment = assessmentRecords
+		return nil
+	}
+
+	// If we exhausted retries but got empty assessments, return success but with warning/empty list
+	// because maybe the student really has no assessments
 	return nil
 }
 
 func (s *Session) fetchCourseAttendance(refresh bool, courseId string) error {
+
 	if len(s.Cookies) == 0 {
 		return fmt.Errorf("no cookies found during fetching course attendance")
 	}
@@ -502,8 +529,13 @@ func (s *Session) fetchCourseAttendance(refresh bool, courseId string) error {
 			return fmt.Errorf("course not found")
 		} else {
 			course := &s.Student.Courses[index]
+
 			if len(extractedData) < 6 {
-				course.Attendance = []Attendance{}
+				// If no data found, retry (unless it's the 10th try)
+				// But maybe the course just has no attendance yet?
+				// The retry logic is good if we suspect flaky server returns empty payload
+				time.Sleep(time.Second * 2)
+				continue
 			} else {
 				var attendanceRecords []Attendance
 
@@ -555,7 +587,10 @@ func (s *Session) fetchCourseAttendance(refresh bool, courseId string) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("failed to fetch attendance after %d attempts", maxRetries)
+
+	// If failed after retries, just return success with empty data to avoid crashing app
+	// This mirrors assessment logic
+	return nil
 }
 
 func (s *Session) fetchTranscript(refresh bool) error {

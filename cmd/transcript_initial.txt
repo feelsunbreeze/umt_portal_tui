@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta http-equiv="content-type" content="text/html;charset=UTF-8" />
+    <title>UMT Student Portal</title>
+    <link rel="icon" type="image/png" href="/img/UMT_Logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <link href="/lib/font-awesome/css/font-awesome.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://www.calculium.com/js/alertify/css/um.min.css" />
+    <link href="/Content/select2/css/select2.min.css" rel="stylesheet" />
+    <link href="/Content/bootstrap-datepicker.css" rel="stylesheet" />
+    <link href="/Content/jquery.multiselect.css" rel="stylesheet" />
+    <link href="/SportalCSS/demo1/main.css" rel="stylesheet" />
+    <link href="/SportalCSS/css/bootstrap.css" rel="stylesheet"/>
+<link href="/SportalCSS/css/bar.css" rel="stylesheet"/>
+<link href="/SportalCSS/css/style.css" rel="stylesheet"/>
+<link href="/SportalCSS/css/style4.css" rel="stylesheet"/>
+<link href="/SportalCSS/css/custom.css" rel="stylesheet"/>
+<link href="/SportalCSS/demo1/main.css" rel="stylesheet"/>
+
+    <style>
+        .overlay {
+            background-color: darkred;
+            background-repeat: no-repeat;
+            position: fixed;
+            width: 100%;
+            /* background-image: url('../../img/arrowloading.gif');*/
+            text-align: center;
+            height: 100%;
+            z-index: 1000;
+            top: 0px;
+            left: 0px;
+            opacity: .5; /* in FireFox */
+            filter: opacity(0.5); /* in IE */
+        }
+    </style>
+</head>
+<body>
+    <div class="se-pre-con"></div>
+    <div class="wrapper">
+        <nav id="sidebar" class="navb">
+            <a href="/Home">
+                <div class="container-fluid text-center navbar-header" style="margin-top:20px;">
+                    <img src="/img/umtlogowhite.png" height="70" width="70" alt="UMT" class="img-responsive" />
+                </div>
+            </a>
+            <hr />
+            <ul class="list-unstyled components">
+                <li>
+                        <a href="/Home/Index">
+                            <i class="metismenu-icon pe-7s-display1 fa-4x"></i>
+                            Dashboard
+                        </a>
+                </li>
+                <li>
+                        <a href="/studentProfile/studentProfile">
+                            <i class="metismenu-icon pe-7s-user fa-4x"></i>
+                            Profile
+                        </a>
+                </li>
+                <!--
+    <li>
+            <a href="/Home/saveVaccinationDetail">
+                <i class="metismenu-icon fas fa-book-medical fa-4x"></i>
+                COVID Vaccination <img src="/img/corona.gif" style="width:15px;" />
+            </a>
+    </li>
+    -->
+                <li>
+                        <a href="/MyCourses">
+                            <i class="metismenu-icon pe-7s-notebook fa-4x"></i>
+                            My Courses
+                        </a>
+                </li>
+                <li>
+                        <a href="/Transcript">
+                            <i class="metismenu-icon pe-7s-study fa-4x"></i>
+                            Transcript
+                        </a>
+                </li>
+                <li>
+                        <a href="/StudentFeedback">
+                            <i class="metismenu-icon pe-7s-user fa-4x"></i>
+                            Feedback
+                        </a>
+                </li>
+                <li>
+                        <a href="/StudentUndertaking">
+                            <i class="metismenu-icon pe-7s-note2 fa-4x"></i>
+                            Student Undertaking
+                        </a>
+                </li>
+                <li>
+                    <a href="#pageSubmenu1" data-toggle="collapse" aria-expanded="false">
+                        <i class="metismenu-icon pe-7s-help1 fa-4x"></i>
+                        Request
+                        <i class="fas fa-angle-down fa-pull-right"></i>
+                    </a>
+                    <ul class="collapse list-unstyled" id="pageSubmenu1">
+                        <li>
+                                <a href="/ManageRequests/getAllRequests">Prs Requests</a>
+                        </li>
+                        <li>
+                                <a href="/CourseRequest/Index?RequestType=AddDrop">Courses Request</a>
+                        </li>
+                        
+                        <li>
+                                <a href="/ManageRequests/Index1">Request Management</a>
+                        </li>
+                        <li>
+                                <a href="/Home/Clearance">FT Clearance</a>
+                        </li>
+                        <li>
+                                <a href="/AppointmentRequest">Appointment Request</a>
+                        </li>
+                    </ul>
+                </li>
+                <li>
+                    <a href="#paymentmenu" data-toggle="collapse" aria-expanded="false">
+                        <i class="metismenu-icon pe-7s-cash fa-4x"></i>
+                        Payments
+                        <i class="fas fa-angle-down fa-pull-right"></i>
+                    </a>
+                    <ul class="collapse list-unstyled" id="paymentmenu">
+                        <li>
+                                <a href="/Payment">Payment History</a>
+                        </li>
+                        <li>
+                                <a href="/Payment/Payment_Voucher">Pending Fee Voucher</a>
+                        </li>
+                    </ul>
+                </li>
+                <li>
+                        <a href="/Roadmap">
+                            <i class="metismenu-icon pe-7s-map fa-4x"></i>
+                            Road Map
+                        </a>
+                </li>
+                <li>
+                        <a href="/Announcements">
+                            <i class="metismenu-icon pe-7s-volume fa-4x"></i>
+                            Announcements
+                        </a>
+                </li>
+                <li>
+                        <a href="/Home/umtstore">
+                            <i class="metismenu-icon pe-7s-cart fa-4x"></i>
+                            UMT Store
+                        </a>
+                </li>
+                <li>
+                        <a href="https://www.umt.edu.pk/org/Academic-Calendar/Academic-Calendar-2019-2020.aspx" target="_blank">
+                            <i class="metismenu-icon pe-7s-global fa-4x"></i>
+                            Academic Calander
+                        </a>
+                </li>
+                <li>
+                </li>
+                
+            </ul>
+        </nav>
+        <div id="content">
+            <nav class="navbar navbar-default mb-xl-5 mb-1">
+                <div class="container-fluid">
+                    <div class="navbar-header">
+                        <button type="button" id="sidebarCollapse" class="btn btn-info navbar-btn">
+                            <i class="fas fa-bars"></i>
+                        </button>
+                    </div>
+                    <span style="color:#2FA5E2;padding:1px;"><b>Announcements</b></span>
+                    <div class="col-md-8" style="padding:1px;border-left:#0e7cad;max-width:100%;">
+                        <marquee class="txt" direction="left" onmouseover="stop()" onmouseout="start()">
+                        </marquee>
+                    </div>
+                    <ul class="top-icons-agileits-w3layouts float-right">
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true"
+                               aria-expanded="false">
+                                <i class="far fa-comment-dots"></i>
+                            </a>
+                            <div class="dropdown-menu top-grid-scroll drop-1 bell" style="">
+                                <h3 class="sub-title-w3-agileits">Messages</h3>
+                                                <a href="/ManageRequests/PRSChat/39356120-d03d-ee11-8107-02bfac020042" class="dropdown-item border-bottom border-light  ">
+                                                    <div class="notif-content-wthree ">
+                                                        <p class="paragraph-agileits-w3layouts py-1">
+                                                            
+                                                                <span> &quot;Full quarter fee extension in<span class="text-info">...</span></span>
+                                                        </p>
+                                                        <h6> 29 August 2023 10:48 AM</h6>
+                                                    </div>
+                                                </a>
+                                                <a href="/ManageRequests/PRSChat/4b8e0fde-e261-ef11-80d2-00155d01050a" class="dropdown-item border-bottom border-light  ">
+                                                    <div class="notif-content-wthree ">
+                                                        <p class="paragraph-agileits-w3layouts py-1">
+                                                            
+                                                                <span> &quot;You are allowed to pay in two<span class="text-info">...</span></span>
+                                                        </p>
+                                                        <h6> 28 August 2024 12:18 PM</h6>
+                                                    </div>
+                                                </a>
+                                                <a href="/ManageRequests/PRSChat/33efcda1-021c-ef11-80cc-00155d009c08" class="dropdown-item border-bottom border-light  ">
+                                                    <div class="notif-content-wthree ">
+                                                        <p class="paragraph-agileits-w3layouts py-1">
+                                                            
+                                                                <span> Full quarter fee extension in <span class="text-info">...</span></span>
+                                                        </p>
+                                                        <h6> 31 May 2024 10:01 AM</h6>
+                                                    </div>
+                                                </a>
+                                                <a href="/ManageRequests/PRSChat/f59ab041-4afa-ed11-8102-00155d005e03" class="dropdown-item border-bottom border-light  ">
+                                                    <div class="notif-content-wthree ">
+                                                        <p class="paragraph-agileits-w3layouts py-1">
+                                                            
+                                                                <span> &quot;Extension is allowed. Kindly <span class="text-info">...</span></span>
+                                                        </p>
+                                                        <h6> 31 May 2023 5:10 PM</h6>
+                                                    </div>
+                                                </a>
+                                                <a href="/ManageRequests/PRSChat/5bcdf4c2-9a00-f011-80da-00155d01050a" class="dropdown-item border-bottom border-light  ">
+                                                    <div class="notif-content-wthree ">
+                                                        <p class="paragraph-agileits-w3layouts py-1">
+                                                            
+                                                                <span> One-time scholarship restorati<span class="text-info">...</span></span>
+                                                        </p>
+                                                        <h6> 25 April 2025 10:21 AM</h6>
+                                                    </div>
+                                                </a>
+                                                <a href="/ManageRequests/PRSChat/fe78d995-17f4-ef11-80da-00155d01050a" class="dropdown-item border-bottom border-light  ">
+                                                    <div class="notif-content-wthree ">
+                                                        <p class="paragraph-agileits-w3layouts py-1">
+                                                            
+                                                                <span> &quot;Full quarter fee extension in<span class="text-info">...</span></span>
+                                                        </p>
+                                                        <h6> 10 March 2025 8:56 AM</h6>
+                                                    </div>
+                                                </a>
+                                                <a href="/ManageRequests/PRSChat/d109eef0-5ab7-ed11-80fc-02bfac020042" class="dropdown-item border-bottom border-light  ">
+                                                    <div class="notif-content-wthree ">
+                                                        <p class="paragraph-agileits-w3layouts py-1">
+                                                            
+                                                                <span> &quot;Extension is allowed. Kindly <span class="text-info">...</span></span>
+                                                        </p>
+                                                        <h6> 01 March 2023 4:31 PM</h6>
+                                                    </div>
+                                                </a>
+                                                <a href="/ManageRequests/PRSChat/221db2ad-5ccf-f011-80dc-00155d01050a" class="dropdown-item border-bottom border-light  ">
+                                                    <div class="notif-content-wthree ">
+                                                        <p class="paragraph-agileits-w3layouts py-1">
+                                                            
+                                                                <span> &quot;You are allowed to pay in two<span class="text-info">...</span></span>
+                                                        </p>
+                                                        <h6> 26 December 2025 12:00 PM</h6>
+                                                    </div>
+                                                </a>
+                                                <a href="/ManageRequests/PRSChat/95f2ffa1-17a8-ef11-80d9-00155d01050a" class="dropdown-item border-bottom border-light  ">
+                                                    <div class="notif-content-wthree ">
+                                                        <p class="paragraph-agileits-w3layouts py-1">
+                                                            
+                                                                <span> &quot;You are allowed to pay in two<span class="text-info">...</span></span>
+                                                        </p>
+                                                        <h6> 30 November 2024 8:49 AM</h6>
+                                                    </div>
+                                                </a>
+
+                            </div>
+                        </li>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true"
+                               aria-expanded="false">
+                                <i class="far fa-bell"></i>
+                            </a>
+                            <div class="dropdown-menu top-grid-scroll drop-1 bell" style="">
+                                <h3 class="sub-title-w3-agileits">Notifications</h3>
+                                            <div class="notif-content-wthree ">
+                                                <p class="paragraph-agileits-w3layouts py-1">
+                                                    <span class="text-danger font-size-md">No Message</span>
+                                                </p>
+                                            </div>
+
+                            </div>
+                        </li>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown2" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                                <i class="fa fa-fingerprint"></i>
+                            </a>
+                            <div class="dropdown-menu drop-3" style="display: none;">
+                                <div class="profile d-flex mr-o">
+                                    <div class="profile-l align-self-center">
+                                        <img src="https://storage.googleapis.com/stateless-campfire-pictures/2019/05/e4629f8e-defaultuserimage-15579880664l8pc.jpg" class="img-fluid mb-3" alt="Responsive image">
+                                    </div>
+                                    <div class="profile-r align-self-center">
+                                        <h3 class="sub-title-w3-agileits">MUHAMMAD SAAD</h3>
+                                        <a>F2021376103</a>
+                                    </div>
+                                </div>
+                                
+                                <a href="/Manage/ChangePassword" class="dropdown-item mt-3">
+                                    <h4>
+                                        <i class="metismenu-icon pe-7s-lock mr-3"></i>Change Password
+                                    </h4>
+                                </a>
+                                <div class="dropdown-divider"></div>
+<form action="/Account/LogOff" class="navbar-right" id="logoutForm" method="post"><input name="__RequestVerificationToken" type="hidden" value="TfQFOUd3uwx_Q-Z29YD9jQlkRASKXbRRz1k1g_9NJ-UMr3OkDt83w-4ydDZLt8QKOxYkJj9-FfbX23QDasrwQHfwlAPxjbYBScn-iv13erjooEV_QsHsHDzzjZKRyNZAE2zqasWXr57Fncv5prYPig2" />                                    <a href="javascript:document.getElementById('logoutForm').submit()" class="dropdown-item mt-3">
+                                        <h4>
+                                            <i class="metismenu-icon pe-7s- mr-3"></i><b class="text-danger">Logout</b>
+                                        </h4>
+                                    </a>
+</form>                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+            <div class="outer-w3-agile col-xl mt-1" style="min-height:400px;">
+                
+
+
+
+
+
+<div class="section-header">
+    <h2>Transcript</h2>
+</div>
+
+
+<div class="embed-responsive embed-responsive-16by9">
+    <iframe class="embed-responsive-item" src="/Reports/Transcript.aspx"></iframe>
+</div>
+
+
+
+            </div>
+            <div class="copyright-w3layouts py-xl-3 py-2 mt-xl-5 mt-4 text-center" style="margin-top: 5rem !important;">
+                <p>
+                    ©   All Rights Reserved | Developed by
+                    <a href="https://www.umt.edu.pk/ois/Home.aspx">Office of Technology Enablement </a>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <script src='/SportalCSS/js/jquery-2.2.3.min.js'></script>
+    <script src="/Scripts/sweetalert2@9.js"></script>
+    
+    
+    <script src="/SportalCSS/js/bootstrap.min.js"></script>
+    <script src="/Content/select2/js/select2.min.js"></script>
+    <script src="/Scripts/jquery.multiselect.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.11.0/umd/popper.min.js" integrity="sha384-b/U6ypiBEHpOf/4+1nzFpr53nxSS+GLCkfwBdFNTxtclqqenISfwAzpKaMNFNmj4" crossorigin="anonymous"></script>
+    <script src="/Scripts/bootstrap-datepicker.min.js"></script>
+    
+    <script src="/Scripts/jquery-3.4.1.custom.js"></script>
+<script src="/Scripts/bootstrap.js"></script>
+
+    
+    
+    <script>
+        $(window).load(function () {
+            $(".se-pre-con").fadeOut("slow");;
+        });
+    </script>
+    <script>
+        $(document).ready(function () {
+            $('#sidebarCollapse').on('click', function () {
+                $('#sidebar').toggleClass('active');
+            });
+        });
+    </script>
+    <script>
+        $(document).ready(function () {
+            $(".dropdown").hover(
+                function () {
+                    $('.dropdown-menu', this).stop(true, true).slideDown("fast");
+                    $(this).toggleClass('open');
+                },
+                function () {
+                    $('.dropdown-menu', this).stop(true, true).slideUp("fast");
+                    $(this).toggleClass('open');
+                }
+            );
+        });
+    </script>
+    
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015" integrity="sha512-ZpsOmlRQV6y907TI0dKBHq9Md29nnaEIPlkf84rnaERnq6zvWvPUqr2ft8M1aS28oN72PdrCzSjY4U6VaAw1EQ==" data-cf-beacon='{"version":"2024.11.0","token":"933c26f212934a45996f882972e02e58","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
+<script>
+    addEventListener("load", function () {
+        setTimeout(hideURLbar, 0);
+    }, false);
+    function hideURLbar() {
+        window.scrollTo(0, 1);
+    }
+    $(function () {
+        var rightJQ = {
+            init: function () {
+                $('.rightJQ').css({
+                    overflow: 'hidden'
+                });
+                $('.rightJQ').on('mouseover', function () {
+                    $('div', this).stop();
+                });
+                $('.rightJQ').on('mouseout', function () {
+                    $('div', this).animate({
+                        right: '100%'
+                    }, 15000, 'linear');
+                });
+                rightJQ.loop();
+            },
+            loop: function () {
+                $('.rightJQ div').css({
+                    position: 'relative',
+                    right: '-100%'
+                }).animate({
+                    right: '100%'
+                }, 15000, 'linear', rightJQ.loop);
+            }
+        };
+        rightJQ.init();
+    });
+</script>

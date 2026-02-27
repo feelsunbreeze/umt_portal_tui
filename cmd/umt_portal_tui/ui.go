@@ -37,6 +37,7 @@ const (
 	AttendanceView
 	AssessmentView
 	TranscriptView
+	ChatView
 )
 
 type LoginResultMsg struct {
@@ -51,16 +52,27 @@ type CoursesLoadedMsg struct {
 }
 
 type CourseActionMsg struct {
-	Action   string
-	CourseID string
-	Error    error
-	Success  bool
+	Action         string
+	CourseID       string
+	Error          error
+	Success        bool
+	UpdatedCourses []Course
 }
 
 type LoadingState struct {
 	Reason     string
 	HelpText   string
 	BottomText string
+}
+
+type NLPClassificationMsg struct {
+	Query             string
+	Intent            string
+	Confidence        float64
+	ExtractedCourse   *Course
+	ExtractedSemester int
+	SpecificQuery     string
+	Error             error
 }
 
 type model struct {
@@ -86,6 +98,17 @@ type model struct {
 	currentSemester       int
 	attendanceTotalPages  int
 	currentAttendancePage int
+
+	// Chat fields
+	matcher                 *IntentMatcher
+	chatInput               string
+	chatHistory             []string
+	lastClassification      *NLPClassificationMsg
+	awaitingCourseSelection bool
+	pendingAction           string // "attendance" or "assessment"
+
+	// Navigation State
+	lastView ViewType
 }
 
 const (
@@ -109,6 +132,9 @@ func NewModel() model {
 	s.Style = lipgloss.NewStyle().Foreground(BLUE)
 	s.Spinner = spinner.Points
 
+	// Initialize simple intent matcher (no ML model needed!)
+	matcher := NewIntentMatcher()
+
 	return model{
 		currentView:    startView,
 		Credentials:    creds,
@@ -116,6 +142,8 @@ func NewModel() model {
 		selectedCourse: 0,
 		rememberMe:     shouldAutoLogin,
 		spinner:        s,
+		matcher:        matcher,
+		chatHistory:    []string{},
 		loadingState: LoadingState{
 			Reason:     "🔐 Logging in, please wait",
 			HelpText:   "Authenticating your cached credentials with the UMT portal",
@@ -173,6 +201,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.currentView = CoursesView
 		}
 
+		// In ui.go - Update the CourseActionMsg struct to carry the data
+
+		type CourseActionMsg struct {
+			Action   string
+			CourseID string
+			Error    error
+			Success  bool
+			// ADD THIS: Carry the updated courses back to the UI
+			UpdatedCourses []Course
+		}
+
+	// In the Update() method, modify the CourseActionMsg handler:
+
 	case CourseActionMsg:
 		m.lastAction = msg.Action
 		if msg.Error != nil {
@@ -187,6 +228,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		} else {
 			m.courseError = nil
+
+			// CRITICAL FIX: Use the courses data from the message, not from session
+			if len(msg.UpdatedCourses) > 0 {
+				m.courses = msg.UpdatedCourses
+			}
+
+			// Update selected course if ID is provided
+			if msg.CourseID != "" {
+				for i, c := range m.courses {
+					if c.ID == msg.CourseID {
+						m.selectedCourse = i
+						break
+					}
+				}
+			}
+
 			if msg.Action == "transcript" {
 				transcript := m.session.Student.Transcript
 				m.setTranscriptTable(transcript)
@@ -199,6 +256,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currentView = CoursesView
 			}
 		}
+
+	case NLPClassificationMsg:
+		m.lastClassification = &msg
+		if msg.Error != nil {
+			m.chatHistory = append(m.chatHistory, fmt.Sprintf("❌ Error: %v", msg.Error))
+			return m, nil
+		}
+
+		// Add query to history
+		m.chatHistory = append(m.chatHistory, fmt.Sprintf("🧑 You: %s", msg.Query))
+
+		// Route based on intent
+		return m.handleIntent(msg)
 
 	case tea.KeyMsg:
 		return m.handleKeyPress(msg)
@@ -225,6 +295,8 @@ func (m model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleAssessmentKeys(msg)
 	case TranscriptView:
 		return m.handleTranscriptKeys(msg)
+	case ChatView:
+		return m.handleChatKeys(msg)
 	default:
 		return m, nil
 	}
@@ -356,6 +428,7 @@ func (m model) handleCoursesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if len(m.courses) > 0 {
 			m.currentView = CourseDetailView
+			m.lastView = CoursesView
 		}
 
 	case "r":
@@ -375,17 +448,31 @@ func (m model) handleCoursesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "t":
 		m.setLoadingState("📄 Getting transcript, please wait", "Fetching your complete academic transcript", "• Esc: Back to courses • Q: Cancel and quit")
 		m.currentView = LoadingView
+		m.lastView = CoursesView
 		return m, tea.Batch(
 			m.spinner.Tick,
 			func() tea.Msg {
 				err := m.session.GetTranscript(false)
 				if err != nil {
 					m.session.Student.CgpaEarned = m.session.Student.Transcript.TotalCGPA
-					return CourseActionMsg{Action: "transcript", Error: err, Success: false}
+					return CourseActionMsg{
+						Action:  "transcript",
+						Error:   err,
+						Success: false,
+					}
 				}
-				return CourseActionMsg{Action: "transcript", Error: nil, Success: true}
+				return CourseActionMsg{
+					Action:         "transcript",
+					Error:          nil,
+					Success:        true,
+					UpdatedCourses: m.session.Student.Courses,
+				}
 			},
 		)
+
+	case "c":
+		// Open AI chat assistant
+		m.currentView = ChatView
 	}
 	return m, nil
 }
@@ -397,7 +484,14 @@ func (m model) handleCourseDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			deleteTranscriptCache()
 		}
 		return m, tea.Quit
-	case "esc", "enter":
+	case "esc":
+		if m.lastView == ChatView {
+			m.currentView = ChatView
+			m.lastView = 0 // Reset
+		} else {
+			m.currentView = CoursesView
+		}
+	case "enter":
 		m.currentView = CoursesView
 	case "a":
 		if len(m.courses) > 0 && m.selectedCourse < len(m.courses) {
@@ -405,14 +499,26 @@ func (m model) handleCourseDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			courseName := m.courses[m.selectedCourse].Code
 			m.setLoadingState(fmt.Sprintf("📊 Getting attendance for %s...", courseName), "Fetching attendance records", "• Esc: Back to courses • Q: Cancel and quit")
 			m.currentView = LoadingView
+			m.lastView = CourseDetailView
 			return m, tea.Batch(
 				m.spinner.Tick,
 				func() tea.Msg {
 					err := m.session.GetCourseAttendance(false, courseID)
 					if err != nil {
-						return CourseActionMsg{Action: "attendance", CourseID: courseID, Error: err, Success: false}
+						return CourseActionMsg{
+							Action:   "attendance",
+							CourseID: courseID,
+							Error:    err,
+							Success:  false,
+						}
 					}
-					return CourseActionMsg{Action: "attendance", CourseID: courseID, Error: nil, Success: true}
+					return CourseActionMsg{
+						Action:         "attendance",
+						CourseID:       courseID,
+						Error:          nil,
+						Success:        true,
+						UpdatedCourses: m.session.Student.Courses,
+					}
 				},
 			)
 		}
@@ -422,14 +528,26 @@ func (m model) handleCourseDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			courseName := m.courses[m.selectedCourse].Code
 			m.setLoadingState(fmt.Sprintf("📝 Getting assessments for %s...", courseName), "Fetching detailed assessment information", "• Esc: Back to courses • Q: Cancel and quit")
 			m.currentView = LoadingView
+			m.lastView = CourseDetailView
 			return m, tea.Batch(
 				m.spinner.Tick,
 				func() tea.Msg {
 					err := m.session.GetCourseAssessments(courseID)
 					if err != nil {
-						return CourseActionMsg{Action: "assessments", CourseID: courseID, Error: err, Success: false}
+						return CourseActionMsg{
+							Action:   "assessments",
+							CourseID: courseID,
+							Error:    err,
+							Success:  false,
+						}
 					}
-					return CourseActionMsg{Action: "assessments", CourseID: courseID, Error: nil, Success: true}
+					return CourseActionMsg{
+						Action:         "assessments",
+						CourseID:       courseID,
+						Error:          nil,
+						Success:        true,
+						UpdatedCourses: m.session.Student.Courses,
+					}
 				},
 			)
 		}
@@ -478,6 +596,8 @@ func (m model) View() string {
 		return m.renderTable(false)
 	case TranscriptView:
 		return m.renderTranscript()
+	case ChatView:
+		return m.renderChat()
 	default:
 		return "Unknown view"
 	}
@@ -717,7 +837,7 @@ func (m model) renderCourses() string {
 			studentInfo,
 			creditHoursInfo,
 			noCoursesStyle.Render("No courses found."),
-			helpStyle.Render("• T: Transcript • R: Refresh • L: Log out • Q: Quit"),
+			helpStyle.Render("• T: Transcript • C: AI Chat • R: Refresh • L: Log out • Q: Quit"),
 		)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 	}
@@ -734,7 +854,7 @@ func (m model) renderCourses() string {
 
 	coursesDisplay := strings.Join(courseList, "\n")
 
-	helpText := helpStyle.Render("• ↑/↓: Navigate • Enter: Details • T: Transcript • R: Refresh • L: Log out • Q: Quit")
+	helpText := helpStyle.Render("• ↑/↓: Navigate • Enter: Details • T: Transcript • C: AI Chat • R: Refresh • L: Log out • Q: Quit")
 
 	content := lipgloss.JoinVertical(lipgloss.Center,
 		studentInfo,
@@ -1048,7 +1168,12 @@ func (m model) handleTranscriptKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	case "esc":
-		m.currentView = CoursesView
+		if m.lastView == ChatView {
+			m.currentView = ChatView
+			m.lastView = 0 // Reset
+		} else {
+			m.currentView = CoursesView
+		}
 
 	case "r":
 		m.setLoadingState("📄 Getting transcript, please wait", "Refreshing your transcript from the portal", "Esc: Back to courses• Q: Cancel and quit")
@@ -1059,9 +1184,18 @@ func (m model) handleTranscriptKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				err := m.session.GetTranscript(true)
 				if err != nil {
 					m.session.Student.CgpaEarned = m.session.Student.Transcript.TotalCGPA
-					return CourseActionMsg{Action: "transcript", Error: err, Success: false}
+					return CourseActionMsg{
+						Action:  "transcript",
+						Error:   err,
+						Success: false,
+					}
 				}
-				return CourseActionMsg{Action: "transcript", Error: nil, Success: true}
+				return CourseActionMsg{
+					Action:         "transcript",
+					Error:          nil,
+					Success:        true,
+					UpdatedCourses: m.session.Student.Courses,
+				}
 			},
 		)
 
@@ -1184,7 +1318,12 @@ func (m model) handleAttendanceKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	case "esc":
-		m.currentView = CourseDetailView
+		if m.lastView == ChatView {
+			m.currentView = ChatView
+			m.lastView = 0 // Reset
+		} else {
+			m.currentView = CourseDetailView
+		}
 	case "r":
 		if len(m.courses) > 0 && m.selectedCourse < len(m.courses) {
 			courseID := m.courses[m.selectedCourse].ID
@@ -1196,9 +1335,26 @@ func (m model) handleAttendanceKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				func() tea.Msg {
 					err := m.session.GetCourseAttendance(true, courseID)
 					if err != nil {
-						return CourseActionMsg{Action: "attendance", CourseID: courseID, Error: err, Success: false}
+						return CourseActionMsg{
+							Action:   "attendance",
+							CourseID: courseID,
+							Error:    err,
+							Success:  false,
+						}
 					}
-					return CourseActionMsg{Action: "attendance", CourseID: courseID, Error: nil, Success: true}
+					for i, c := range m.session.Student.Courses {
+						if c.ID == courseID {
+							m.selectedCourse = i
+							break
+						}
+					}
+					return CourseActionMsg{
+						Action:         "attendance",
+						CourseID:       courseID,
+						Error:          nil,
+						Success:        true,
+						UpdatedCourses: m.session.Student.Courses,
+					}
 				},
 			)
 		}
@@ -1228,7 +1384,12 @@ func (m model) handleAssessmentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	case "esc":
-		m.currentView = CourseDetailView
+		if m.lastView == ChatView {
+			m.currentView = ChatView
+			m.lastView = 0 // Reset
+		} else {
+			m.currentView = CourseDetailView
+		}
 	case "r":
 		if len(m.courses) > 0 && m.selectedCourse < len(m.courses) {
 			courseID := m.courses[m.selectedCourse].ID
@@ -1240,9 +1401,26 @@ func (m model) handleAssessmentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				func() tea.Msg {
 					err := m.session.GetCourseAssessments(courseID)
 					if err != nil {
-						return CourseActionMsg{Action: "assessments", CourseID: courseID, Error: err, Success: false}
+						return CourseActionMsg{
+							Action:   "assessments",
+							CourseID: courseID,
+							Error:    err,
+							Success:  false,
+						}
 					}
-					return CourseActionMsg{Action: "assessments", CourseID: courseID, Error: nil, Success: true}
+					for i, c := range m.session.Student.Courses {
+						if c.ID == courseID {
+							m.selectedCourse = i
+							break
+						}
+					}
+					return CourseActionMsg{
+						Action:         "assessments",
+						CourseID:       courseID,
+						Error:          nil,
+						Success:        true,
+						UpdatedCourses: m.session.Student.Courses,
+					}
 				},
 			)
 		}
