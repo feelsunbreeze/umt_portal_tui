@@ -108,8 +108,6 @@ This project was developed as part of a Natural Language Processing course to de
 
 ## 🔮 Future Enhancements
 
-- [ ] Machine learning-based intent classifier
-- [ ] Multi-turn conversation with context memory
 - [ ] Payment history & fee voucher generation
 - [ ] PRS (Program Registration) requests
 - [ ] Add/drop course functionality
